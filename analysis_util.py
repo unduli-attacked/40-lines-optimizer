@@ -4,9 +4,13 @@ import requests
 import time
 import math
 from datetime import datetime
+from threading import Lock
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+import json
 
 class Downloader:
-    lock = False # controls whether a new API request can be made
     user_endpoint = "https://ch.tetr.io/api/users/"
     summary_addl = "/summaries/40l"
     record_addl = "/records/40l/recent?limit=100"
@@ -16,6 +20,7 @@ class Downloader:
         self.session_id = "OPTIMIZER_"+str(random.randbytes(16).hex())
         self.headers = {'User-Agent':':P'}
         self.headers_sesh = {"X-Session-ID":self.session_id, 'User-Agent':':P'}
+        self.lock = Lock()
 
     def pull_demog_data(self, username):
         # lookup user endpoint
@@ -29,7 +34,7 @@ class Downloader:
             #FIXME actually handle this error
             print("Demog request failed for user", username, ". Error:", e)
             return -1
-        print(user_info.json())
+        # print(user_info.json())
         if user_info.status_code == 200:
             # user info data retrieved
             try:
@@ -80,7 +85,9 @@ class Downloader:
                     "best_time": summ_info_data.get('record', {}).get('results', {}).get('stats', {}).get('finaltime', math.nan),
                     "best_record": summ_info_data.get('record', {}).get('_id', None),
                     "live_rank": summ_info_data.get('rank', -1), # note: this will be -1 if unranked
-                    "prisecter": str(summ_info_data.get('p', {}).get('pri', 0)) + ':' + str(summ_info_data.get('p', {}).get('sec', 0)) + ':' + str(summ_info_data.get('p', {}).get('ter', 0))
+                    "pri": summ_info_data.get('record', {}).get('p', {}).get('pri', 0),
+                    "sec": summ_info_data.get('record', {}).get('p', {}).get('sec', 0),
+                    "ter": summ_info_data.get('record', {}).get('p', {}).get('ter', 0)
                 }
                 # record end time
                 summEnd = time.time()        
@@ -94,7 +101,7 @@ class Downloader:
                 return -1
         
 
-    def processRecord(record_json, username):
+    def processRecord(self, record_json, username):
         try:
             results = record_json["results"]
             record_row = {
@@ -156,10 +163,26 @@ class Downloader:
                 # speed limit has not been met, sleep for remaining time
                 time.sleep(self.speed_limit - (pgEnd - pgStart))
         return records_df
+    
+    def place_rank(self, pri, sec, ter):
+        before = self.leaderboard_df.loc[self.leaderboard_df['pri'] >= pri]
+        if pri in before['pri'].values:
+            # need sec
+            before = before.loc[before['sec'] >= sec]
+            if sec in before['sec'].values:
+                before = before.loc[before['ter'] >= ter]
+        rank = before['rank'].max() + 0.5
+        del before
+        return rank
+
 
     def pull_user(self, username):
+        self.lock.acquire()
         demog_data = self.pull_demog_data(username)
         summ_data = self.pull_summ_data(username)
+        # get records
+        record_df = self.pull_game_data(username)
+        self.lock.release()
 
         user_data = demog_data | summ_data
         if user_data['created_date']:
@@ -167,26 +190,95 @@ class Downloader:
         else:
             user_data['time_played'] = None
 
-        # get records
-        record_df = self.pull_game_data(username)
+        
         record_df["kps"] = record_df["inputs"] / (record_df["final_time"] / 1000) # keys per second
         record_df["kpp"] = record_df["inputs"] / record_df["pieces_placed"] # keys per piece
         record_df["percent_perf"] = record_df["finesse_perf"] / record_df["pieces_placed"] # percent of pieces placed with perfect finesse
-
+        
         # aggregate
         attrs_to_grab = ["final_time","pps","inputs","score","pieces_placed","singles","doubles","triples","quads","all_clears","finesse_faults","finesse_perf", "percent_perf", "kpp", "kps"]
         for attr in attrs_to_grab:
-            user_data[attr+'_avg'] = record_df[attr].mean()
-            user_data[attr+'_pb'] = record_df[attr].loc[record_df['current_pb'] == True]
-        
+            user_data[attr+'_avg'] = float(record_df[attr].mean())
+            user_data[attr+'_pb'] = float(record_df[attr].loc[record_df['current_pb'] == True].values[0])
+        user_data['rank'] = self.place_rank(user_data['pri'], user_data['sec'], user_data['ter'])
         return user_data
 
 class Analyzer:
+    feature_set = ['rank', 'kps_pb', 'final_time_pb', 'kps_avg', 'final_time_avg', 'pps_pb', 'pps_avg', 'achievement_rating', 'xp', 'all_clears_avg', 'all_clears_pb', 'TL_play_time', 'TL_games_played', 'TL_games_won', 'time_played', 'num_records', 'inputs_pb', 'kpp_pb', 'score_pb', 'score_avg', 'finesse_faults_pb', 'percent_perf_pb', 'doubles_avg', 'finesse_perf_pb', 'doubles_pb', 'kpp_avg', 'finesse_faults_avg', 'inputs_avg', 'pieces_placed_pb']
+    improveable_attrs = {
+        'num_records': "number of 40-lines games played", 
+        'pps_pb': "number of pieces placed per second (PPS)",
+        'inputs_pb': "number of inputs", 
+        'score_pb': "score",  
+        'percent_perf_pb': "percent of pieces placed with perfect finesse (finesse %)", 
+        'kpp_pb': "number of keys pressed per piece (KPP)", 
+        'kps_pb': "number of keys pressed per second (KPS)"
+    }
     def __init__(self):
-        pass
+        self.best_df = pd.read_csv('data/best_in_cluster.csv', index_col=[0])
+        self.median_df = pd.read_csv('data/median_in_cluster.csv', index_col=[0])
+        self.means_df = pd.read_csv('data/cluster_means.csv')
+        self.advice = json.load(open('data/advice_text.json', 'r'))
+        cluster_centers = np.vstack(pd.read_csv('data/cluster_centers.csv'))
+        self.model = KMeans(init=cluster_centers)
+        self.scaler = StandardScaler()
+    
+    def get_cluster(self, user_info):
+        feature_arr = []
+        for key in self.feature_set:
+            feature_arr.append(user_info[key])
+        scaled_features = self.scaler.fit_transform(feature_arr) #FIXME scaler needs 2d, pull parmas from full dataset?
+        return self.model.predict(scaled_features)
+    
+    def calc_attr_dist(self, user, bestUser, means):
+        dists = {}
+        for attr in self.improveable_attrs.keys():
+            dist = (user[attr]) - (bestUser[attr])
+            dist = dist / means[attr]
+            dists[dist] = attr #math.sqrt((user[attr] - bestUser[attr])**2)
+        return dists
 
-test = True
+    def get_improvables(self, user_info, best_user):
+
+        dists = self.calc_attr_dist(user_info, best_user[self.improveable_attrs.keys()], self.means_df.loc[self.means_df['cluster'] == best_user['cluster']])
+        min_dist = dists[min(dists.keys())]
+        max_dist = dists[max(dists.keys())]
+        closest_zero = dists[min(dists.keys(), key=lambda x: abs(x))]
+
+        return min_dist, max_dist, closest_zero
+    
+    def analyze_user(self, user_info):
+        cluster_info = {'username':user_info['username']}
+        cluster_info['cluster'] = self.get_cluster(user_info)
+        best_user = self.best_df.loc[self.best_df['cluster'] == cluster_info['cluster']]
+
+        lower, higher, similar = self.get_improvables(user_info, best_user)
+
+        cluster_info['lower_attr'] = self.improveable_attrs[lower]
+        cluster_info['lower_good'] = self.advice[lower.strip('_pb')]['minimize']
+        cluster_info['lower_text'] = self.advice[lower.strip('_pb')]['text']
+
+        cluster_info['higher_attr'] = self.improveable_attrs[higher]
+        cluster_info['higher_good'] = not self.advice[higher.strip('_pb')]['minimize']
+        cluster_info['higher_text'] = self.advice[higher.strip('_pb')]['text']
+
+        cluster_info['similar_attr'] = self.improveable_attrs[similar]
+
+        cluster_info['top_user'] = best_user['username']
+        cluster_info['top_rank'] = best_user['rank']
+
+        cluster_info['median_rank'] = self.median_df.loc[self.median_df['cluster'] == cluster_info['cluster']]
+        cluster_info['ab_average'] = 'above' if user_info['rank'] < cluster_info['median_rank'] else 'below'
+
+        return cluster_info
+
+
+test = False
 if test==True:
     dl = Downloader('data/leaderboard_2024.csv')
-    demog = dl.pull_demog_data('badwolf5940')
-    print(demog)
+    # user = dl.pull_user('badwolf5940')
+    demog_data = dl.pull_demog_data('badwolf5940')
+    summ_data = dl.pull_summ_data('badwolf5940')
+    user_data = demog_data | summ_data
+    user_data['rank'] = dl.place_rank(user_data['pri'], user_data['sec'], user_data['ter'])
+    print(user_data)

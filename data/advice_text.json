@@ -1,0 +1,30 @@
+{
+    "num_records": {
+        "minimize": false,
+        "text": "playing more 40-lines games. Practice makes perfect!"
+    },
+    "pps": {
+        "minimize": false,
+        "text": ""
+    },
+    "inputs": {
+        "minimize": true,
+        "text": "optimizing each keypress when placing a piece. Be sure to utilize <i>all</i> keybindings available, including the 180° rotation key. You can check your keybindings in the \"Config\" menu.\nYou could also try using the finesse strategy, which seeks to optimize the number of keys pressed per piece. We'd recommend checking the \"Alert on finesse fault\" box on the pregame screen to help you keep track of which moves are finesse faults."
+    },
+    "score": {
+        "minimize": false,
+        "text": "working on your general stacker skills. You could simply play more 40-lines games, or expand to other game modes like Zen, Blitz, or multiplayer!"
+    },
+    "percent_perf": {
+        "minimize": false,
+        "text": "reducing the number of finesse faults you make overall. We'd recommend checking the \"Alert on finesse fault\" box on the pregame screen to help you keep track of which moves are finesse faults."
+    },
+    "kpp": {
+        "minimize": true,
+        "text": "optimizing each keypress when placing a piece. Be sure to utilize <i>all</i> keybindings available, including the 180° rotation key. You can check your keybindings in the \"Config\" menu.\nYou could also try using the finesse strategy, which seeks to optimize the number of keys pressed per piece. We'd recommend checking the \"Alert on finesse fault\" box on the pregame screen to help you keep track of which moves are finesse faults."
+    },
+    "kps": {
+        "minimize": false,
+        "text": "improving the speed at which you press each key. The primary way to do this is to increase your overall typing speed (through practice), but we'd also recommend experimenting with different keybindings to find the one that works best for you. You can adjust your keybindings in the \"Config\" menu."
+    }
+}
