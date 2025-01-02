@@ -5,7 +5,7 @@
     },
     "pps": {
         "minimize": false,
-        "text": ""
+        "text": "{placeholder text}"
     },
     "inputs": {
         "minimize": true,

@@ -8,8 +8,8 @@
         <p>Hello, {{username}}! Your current Tetr.io rank is {{'{:,}'.format(user_info.live_rank)}}, and your rank on our static leaderboard is {{'{:,}'.format(user_info.rank)}}. Your personal best time is {{user_info.best_time/1000}} seconds.</p>
         <h2>Cluster Analysis Results</h2>
         <p>You are in {{cluster_info.cluster_name}} cluster.</p>
-        <p>The median rank in your cluster is {{cluster_info.median_rank}}, meaning your rank is {{cluster_info.ab_avg}} average for this cluster.</p>
-        <p>The top player in this cluster (based on our static data) is {{cluster_info.top_user}} with a rank of {{cluster_info.top_rank}}. You and {{cluster_info.top_user}} have a similar {{cluster_info.similar_attr}}.</p>
+        <p>The mean (average) rank in your cluster is {{'{:,}'.format(cluster_info.median_rank)}}, meaning your rank is <strong>{{cluster_info.ab_average}} average</strong> for this cluster.</p>
+        <p>The top player in this cluster (based on our static data) is <strong>{{cluster_info.top_user}}</strong> with a rank of {{'{:,}'.format(cluster_info.top_rank)}}. You and {{cluster_info.top_user}} have a similar {{cluster_info.similar_attr}}.</p>
         <br>
         <p>Your {{cluster_info.higher_attr}} is higher than {{cluster_info.top_user}}'s.</p>
         {% if cluster_info.higher_good %}

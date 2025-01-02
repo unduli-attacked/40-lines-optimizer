@@ -9,6 +9,7 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 import json
+from joblib import load
 
 class Downloader:
     user_endpoint = "https://ch.tetr.io/api/users/"
@@ -189,6 +190,7 @@ class Downloader:
             user_data['time_played'] = time.time() - datetime.fromisoformat(user_data['created_date']).timestamp()
         else:
             user_data['time_played'] = None
+        user_data['num_records'] = len(record_df)
 
         
         record_df["kps"] = record_df["inputs"] / (record_df["final_time"] / 1000) # keys per second
@@ -214,33 +216,42 @@ class Analyzer:
         'kpp_pb': "number of keys pressed per piece (KPP)", 
         'kps_pb': "number of keys pressed per second (KPS)"
     }
+    
     def __init__(self):
         self.best_df = pd.read_csv('data/best_in_cluster.csv', index_col=[0])
-        self.median_df = pd.read_csv('data/median_in_cluster.csv', index_col=[0])
+
+        # TODO these two use the same data, combine them at some point
+        self.avgs_df = pd.read_csv('data/cluster_avgs.csv', index_col=[0])
         self.means_df = pd.read_csv('data/cluster_means.csv')
+
         self.advice = json.load(open('data/advice_text.json', 'r'))
-        cluster_centers = np.vstack(pd.read_csv('data/cluster_centers.csv'))
-        self.model = KMeans(init=cluster_centers)
+        self.model = load('data/cluster_model.joblib')
         self.scaler = StandardScaler()
+    
+    def cluster_scale(self, x):
+        u = 2706116.195379935 # original sample set mean
+        s = 15783157.09064165 # original sample set standard deviation
+
+        return (x-u)/s
+    
     
     def get_cluster(self, user_info):
         feature_arr = []
         for key in self.feature_set:
-            feature_arr.append(user_info[key])
-        scaled_features = self.scaler.fit_transform(feature_arr) #FIXME scaler needs 2d, pull parmas from full dataset?
-        return self.model.predict(scaled_features)
+            feature_arr.append(self.cluster_scale(user_info[key]))
+        return self.model.predict([feature_arr])[0]
     
     def calc_attr_dist(self, user, bestUser, means):
         dists = {}
         for attr in self.improveable_attrs.keys():
-            dist = (user[attr]) - (bestUser[attr])
-            dist = dist / means[attr]
+            dist = (user[attr]) - (bestUser[attr].values[0])
+            dist = dist / means[attr].values[0]
             dists[dist] = attr #math.sqrt((user[attr] - bestUser[attr])**2)
         return dists
 
-    def get_improvables(self, user_info, best_user):
+    def get_improvables(self, user_info, best_user, cluster):
 
-        dists = self.calc_attr_dist(user_info, best_user[self.improveable_attrs.keys()], self.means_df.loc[self.means_df['cluster'] == best_user['cluster']])
+        dists = self.calc_attr_dist(user_info, best_user[self.improveable_attrs.keys()], self.means_df.loc[self.means_df['cluster'] == cluster])
         min_dist = dists[min(dists.keys())]
         max_dist = dists[max(dists.keys())]
         closest_zero = dists[min(dists.keys(), key=lambda x: abs(x))]
@@ -250,24 +261,28 @@ class Analyzer:
     def analyze_user(self, user_info):
         cluster_info = {'username':user_info['username']}
         cluster_info['cluster'] = self.get_cluster(user_info)
+        # print(cluster_info['cluster'])
         best_user = self.best_df.loc[self.best_df['cluster'] == cluster_info['cluster']]
 
-        lower, higher, similar = self.get_improvables(user_info, best_user)
+        lower, higher, similar = self.get_improvables(user_info, best_user, cluster_info['cluster'])
 
         cluster_info['lower_attr'] = self.improveable_attrs[lower]
-        cluster_info['lower_good'] = self.advice[lower.strip('_pb')]['minimize']
-        cluster_info['lower_text'] = self.advice[lower.strip('_pb')]['text']
+        lower = lower if lower=='num_records' else lower[:-3]
+        cluster_info['lower_good'] = self.advice[lower]['minimize']
+        cluster_info['lower_text'] = self.advice[lower]['text']
 
         cluster_info['higher_attr'] = self.improveable_attrs[higher]
-        cluster_info['higher_good'] = not self.advice[higher.strip('_pb')]['minimize']
-        cluster_info['higher_text'] = self.advice[higher.strip('_pb')]['text']
+        higher = higher if higher=='num_records' else higher[:-3]
+        cluster_info['higher_good'] = not self.advice[higher]['minimize']
+        cluster_info['higher_text'] = self.advice[higher]['text']
 
         cluster_info['similar_attr'] = self.improveable_attrs[similar]
 
-        cluster_info['top_user'] = best_user['username']
-        cluster_info['top_rank'] = best_user['rank']
+        cluster_info['top_user'] = best_user['username'].values[0]
+        cluster_info['top_rank'] = best_user['rank'].values[0]
+        cluster_info['cluster_name'] = best_user['cluster_name'].values[0]
 
-        cluster_info['median_rank'] = self.median_df.loc[self.median_df['cluster'] == cluster_info['cluster']]
+        cluster_info['median_rank'] = round(self.avgs_df.loc[self.avgs_df['cluster'] == cluster_info['cluster']]['rank'].values[0])
         cluster_info['ab_average'] = 'above' if user_info['rank'] < cluster_info['median_rank'] else 'below'
 
         return cluster_info
