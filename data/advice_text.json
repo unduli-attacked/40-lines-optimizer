@@ -5,7 +5,7 @@
     },
     "pps": {
         "minimize": false,
-        "text": "{placeholder text}"
+        "text": "improving your number of keys pressed per second (KPS) and/or number of keys pressed per piece (KPP). See the relevant sections below."
     },
     "inputs": {
         "minimize": true,
@@ -13,11 +13,11 @@
     },
     "score": {
         "minimize": false,
-        "text": "working on your general stacker skills. You could simply play more 40-lines games, or expand to other game modes like Zen, Blitz, or multiplayer!"
+        "text": "working on your general stacker skills. You could simply play more 40-lines games, or expand to other game modes like Zen, Blitz, or multiplayer."
     },
     "percent_perf": {
         "minimize": false,
-        "text": "reducing the number of finesse faults you make overall. We'd recommend checking the \"Alert on finesse fault\" box on the pregame screen to help you keep track of which moves are finesse faults."
+        "text": "reducing the number of finesse faults you make overall. To help you practice, you could try checking the \"Alert on finesse fault\" box on the pregame screen to alert you when you make a finesse fault"
     },
     "kpp": {
         "minimize": true,

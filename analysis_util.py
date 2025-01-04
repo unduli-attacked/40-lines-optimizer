@@ -10,18 +10,22 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 import json
 from joblib import load
+from io import BytesIO
+import matplotlib.pyplot as plt
+import base64
 
 class Downloader:
     user_endpoint = "https://ch.tetr.io/api/users/"
     summary_addl = "/summaries/40l"
     record_addl = "/records/40l/recent?limit=100"
     speed_limit = 1
-    def __init__(self, leaderboard_file):
+    def __init__(self, leaderboard_file, debug=False):
         self.leaderboard_df = pd.read_csv(leaderboard_file)
         self.session_id = "OPTIMIZER_"+str(random.randbytes(16).hex())
         self.headers = {'User-Agent':':P'}
         self.headers_sesh = {"X-Session-ID":self.session_id, 'User-Agent':':P'}
         self.lock = Lock()
+        self.debug = debug
 
     def pull_demog_data(self, username):
         # lookup user endpoint
@@ -32,7 +36,6 @@ class Downloader:
         try:
             user_info = requests.get(endpoint, headers=self.headers)
         except Exception as e:
-            #FIXME actually handle this error
             print("Demog request failed for user", username, ". Error:", e)
             return -1
         # print(user_info.json())
@@ -59,13 +62,15 @@ class Downloader:
                 if self.speed_limit > (usrEnd - usrStart):
                     # speed limit has not been met, sleep for remaining time
                     time.sleep(self.speed_limit - (usrEnd - usrStart))
-                print(demog_data)
+                if self.debug: print(demog_data)
                 return demog_data
         
             except Exception as e:
-                #FIXME actually handle this
                 print("Failed to retrieve user", username,". Error:", e)
                 return -1
+        else:
+            print("Demog request failed for user", username, ". Error:", user_info.json().get('error').get('msg'))
+            return -1
 
     def pull_summ_data(self, username):
         endpoint = self.user_endpoint+username+self.summary_addl
@@ -75,7 +80,6 @@ class Downloader:
         try:
             summ_info = requests.get(endpoint, headers=self.headers)
         except Exception as e:
-            #FIXME actually handle this error
             print("Summary request failed for user", username, ". Error:", e)
             return -1
 
@@ -100,6 +104,9 @@ class Downloader:
                 return summ_data
             except Exception as e:
                 return -1
+        else:
+            print("Summary request failed for user", username, ". Error:", summ_info.json().get('error', {}).get('msg', ''))
+            return -1
         
 
     def processRecord(self, record_json, username):
@@ -157,7 +164,9 @@ class Downloader:
                         records_df = pd.concat([records_df, pd.DataFrame(ret_rec, index=[0])], ignore_index=True)
                 
                 last_prisecter = str(rec["p"]["pri"])+":"+str(rec["p"]["sec"])+":"+str(rec["p"]["ter"])
-
+            else:
+                print("Record request for user", username, "at prisecter", last_prisecter, "failed. Error:", user_recent.json().get('error', {}).get('msg', ''))
+                continue
             pgEnd = time.time()
             # determine if the speed limit has been met
             if self.speed_limit > (pgEnd - pgStart):
@@ -171,6 +180,7 @@ class Downloader:
             # need sec
             before = before.loc[before['sec'] >= sec]
             if sec in before['sec'].values:
+                # need ter
                 before = before.loc[before['ter'] >= ter]
         rank = before['rank'].max() + 0.5
         del before
@@ -178,12 +188,15 @@ class Downloader:
 
 
     def pull_user(self, username):
-        self.lock.acquire()
+        self.lock.acquire() # lock to prevent overrequesting
         demog_data = self.pull_demog_data(username)
+        if demog_data == -1: return -1 # user not found
         summ_data = self.pull_summ_data(username)
+        if summ_data == -1: return -1 # user not found
         # get records
         record_df = self.pull_game_data(username)
-        self.lock.release()
+        self.lock.release() # unlock
+        if len(record_df.dropna()) < 1: return -1 # no records found
 
         user_data = demog_data | summ_data
         if user_data['created_date']:
@@ -217,16 +230,14 @@ class Analyzer:
         'kps_pb': "number of keys pressed per second (KPS)"
     }
     
-    def __init__(self):
+    def __init__(self, debug=False):
         self.best_df = pd.read_csv('data/best_in_cluster.csv', index_col=[0])
-
-        # TODO these two use the same data, combine them at some point
         self.avgs_df = pd.read_csv('data/cluster_avgs.csv', index_col=[0])
-        self.means_df = pd.read_csv('data/cluster_means.csv')
-
+        self.stds_df = pd.read_csv('data/cluster_stds.csv', index_col=[0])
         self.advice = json.load(open('data/advice_text.json', 'r'))
         self.model = load('data/cluster_model.joblib')
         self.scaler = StandardScaler()
+        self.debug = debug
     
     def cluster_scale(self, x):
         u = 2706116.195379935 # original sample set mean
@@ -241,49 +252,58 @@ class Analyzer:
             feature_arr.append(self.cluster_scale(user_info[key]))
         return self.model.predict([feature_arr])[0]
     
-    def calc_attr_dist(self, user, bestUser, means):
-        dists = {}
-        for attr in self.improveable_attrs.keys():
-            dist = (user[attr]) - (bestUser[attr].values[0])
-            dist = dist / means[attr].values[0]
-            dists[dist] = attr #math.sqrt((user[attr] - bestUser[attr])**2)
-        return dists
-
-    def get_improvables(self, user_info, best_user, cluster):
-
-        dists = self.calc_attr_dist(user_info, best_user[self.improveable_attrs.keys()], self.means_df.loc[self.means_df['cluster'] == cluster])
-        min_dist = dists[min(dists.keys())]
-        max_dist = dists[max(dists.keys())]
-        closest_zero = dists[min(dists.keys(), key=lambda x: abs(x))]
-
-        return min_dist, max_dist, closest_zero
     
+    
+    def get_advice(self, user, bestUser, means, stds):
+        def attr_scale(label, value):
+            return (value - means[label].values[0]) / stds[label].values[0]
+        attr_advice = {}
+        plt.rcParams.update({'font.size': 22})
+        for attr_l in self.improveable_attrs.keys():
+            name = self.improveable_attrs[attr_l]
+            distBest = attr_scale(attr_l, user[attr_l]) - attr_scale(attr_l, bestUser[attr_l].values[0])
+            distMean = attr_scale(attr_l, user[attr_l]) - 0 # the scaled mean will always be 0
+            attr = attr_l if attr_l=='num_records' else attr_l[:-3]
+            attr_advice[attr] = {}
+            attr_advice[attr]['name'] = name
+            best = 'better than' if (distBest < 0) == (self.advice[attr]['minimize']==True) else ('the same as' if distBest == 0 else 'worse than')
+            mean = 'better than' if (distMean < 0) == (self.advice[attr]['minimize']==True) else ('' if distMean == 0 else 'worse than')
+            
+            if (not best.startswith('worse')) and (not mean.startswith('worse')):
+                attr_advice[attr]['text'] = "Your {} is <strong>{} average</strong> for your cluster <i>and</i> {} {}'s. Congratulations!".format(name, mean, best, bestUser['username'].values[0])
+            else:
+                if not mean.startswith('worse'):
+                    attr_advice[attr]['text'] = "Your {} is <strong>{} average</strong> for your cluster, but worse than {}'s.".format(name, mean, bestUser['username'].values[0])
+                else:
+                    attr_advice[attr]['text'] = "Your {} is <strong>worse than average</strong> for your cluster.".format(name)
+                attr_advice[attr]['text'] += " This means you should work on <strong>{}</strong> your {}.</p><p>To do so, we'd recommend {}".format(('decreasing' if self.advice[attr]['minimize'] else 'increasing'), name, self.advice[attr]['text'])
+
+            plt.figure(figsize=(10,10))
+            plt.bar(['You', 'Average', bestUser['username'].values[0]], [user[attr_l], means[attr_l].values[0], bestUser[attr_l].values[0]])
+            plt.xlabel('')
+            plt.ylabel(" ".join(w.capitalize() for w in name.split()))
+            chart = BytesIO()
+            plt.savefig(chart, format='png')
+            chart.seek(0)
+            attr_advice[attr]['chart'] = base64.b64encode(chart.getvalue()).decode()
+
+        return attr_advice
+    
+    # TODO add the improvenator
     def analyze_user(self, user_info):
         cluster_info = {'username':user_info['username']}
         cluster_info['cluster'] = self.get_cluster(user_info)
         # print(cluster_info['cluster'])
         best_user = self.best_df.loc[self.best_df['cluster'] == cluster_info['cluster']]
 
-        lower, higher, similar = self.get_improvables(user_info, best_user, cluster_info['cluster'])
-
-        cluster_info['lower_attr'] = self.improveable_attrs[lower]
-        lower = lower if lower=='num_records' else lower[:-3]
-        cluster_info['lower_good'] = self.advice[lower]['minimize']
-        cluster_info['lower_text'] = self.advice[lower]['text']
-
-        cluster_info['higher_attr'] = self.improveable_attrs[higher]
-        higher = higher if higher=='num_records' else higher[:-3]
-        cluster_info['higher_good'] = not self.advice[higher]['minimize']
-        cluster_info['higher_text'] = self.advice[higher]['text']
-
-        cluster_info['similar_attr'] = self.improveable_attrs[similar]
+        cluster_info['attr_advice'] = self.get_advice(user_info, best_user, self.avgs_df.loc[self.avgs_df['cluster'] == cluster_info['cluster']], self.stds_df.loc[self.stds_df['cluster'] == cluster_info['cluster']])
 
         cluster_info['top_user'] = best_user['username'].values[0]
         cluster_info['top_rank'] = best_user['rank'].values[0]
         cluster_info['cluster_name'] = best_user['cluster_name'].values[0]
 
-        cluster_info['median_rank'] = round(self.avgs_df.loc[self.avgs_df['cluster'] == cluster_info['cluster']]['rank'].values[0])
-        cluster_info['ab_average'] = 'above' if user_info['rank'] < cluster_info['median_rank'] else 'below'
+        cluster_info['mean_rank'] = round(self.avgs_df.loc[self.avgs_df['cluster'] == cluster_info['cluster']]['rank'].values[0])
+        cluster_info['ab_average'] = 'above' if user_info['rank'] < cluster_info['mean_rank'] else 'below'
 
         return cluster_info
 

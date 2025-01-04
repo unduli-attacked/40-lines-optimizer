@@ -1,28 +1,56 @@
 <!DOCTYPE html>
 <html>
     <head>
-
+        <title>40 Lines Optimizer</title>
+        <style>
+            .row{
+                display: flex;
+                width: 75%;            }
+            .column{
+                flex:50%;
+            }
+        </style>
+        <!-- TODO use bootstrap (probably) to make this prettier-->
     </head>
     <body>
         <h1>Recommendations for {{username}}</h1>
         <p>Hello, {{username}}! Your current Tetr.io rank is {{'{:,}'.format(user_info.live_rank)}}, and your rank on our static leaderboard is {{'{:,}'.format(user_info.rank)}}. Your personal best time is {{user_info.best_time/1000}} seconds.</p>
         <h2>Cluster Analysis Results</h2>
-        <p>You are in {{cluster_info.cluster_name}} cluster.</p>
-        <p>The mean (average) rank in your cluster is {{'{:,}'.format(cluster_info.median_rank)}}, meaning your rank is <strong>{{cluster_info.ab_average}} average</strong> for this cluster.</p>
-        <p>The top player in this cluster (based on our static data) is <strong>{{cluster_info.top_user}}</strong> with a rank of {{'{:,}'.format(cluster_info.top_rank)}}. You and {{cluster_info.top_user}} have a similar {{cluster_info.similar_attr}}.</p>
-        <br>
+        <p>You are in {{cluster_info.cluster_name}} cluster.</p> <!-- TODO add animal images maybe -->
+        <p>The mean (average) rank in your cluster is {{'{:,}'.format(cluster_info.mean_rank)}}, meaning your rank is <strong>{{cluster_info.ab_average}} average</strong> for this cluster.</p>
+        <p>The top player in this cluster (based on our static data) is <strong>{{cluster_info.top_user}}</strong> with a rank of {{'{:,}'.format(cluster_info.top_rank)}}.</p>
+        
+        {% for key, attr in cluster_info.attr_advice.items()%}
+            <details>
+                <summary style='text-transform: capitalize; display: inline;'><h3 style='margin-bottom:0;'>{{attr.name}}</h3></summary>
+                <div class="row">
+                    <div class="column">
+                        <br>
+                        <p>{{attr.text | safe}}</p>
+                    </div>
+                    <div class="column">
+                        <img src="data:image/png;base64,{{attr.chart}}" alt="A chart comparing your {{attr.name}} to the average and best players in your cluster." height="300">
+                    </div>
+                </div>
+            </details>
+            
+        {%endfor%}
+        <!--
         <p>Your {{cluster_info.higher_attr}} is higher than {{cluster_info.top_user}}'s.</p>
-        {% if cluster_info.higher_good %}
-            <p>This means your {{cluster_info.higher_attr}} is better than {{cluster_info.top_user}}'s. Congratulations!</p>
-        {%else%}
-            <p>This means you should work on reducing your {{cluster_info.higher_attr}}. To do so, we'd recommend {{cluster_info.higher_text | safe}}.</p>
-        {%endif%}
-        <br>
-        <p>Your {{cluster_info.lower_attr}} is lower than {{cluster_info.top_user}}'s.</p>
-        {% if cluster_info.lower_good%}
-        <p>This means your {{cluster_info.lower_attr}} is better than {{cluster_info.top_user}}'s. Congratulations!</p>
-        {%else%}
-            <p>This likely means you should work on increasing your {{cluster_info.lower_attr}}. To do  so, we'd recommend {{cluster_info.lower_text | safe}}.</p>
-        {%endif%}
+            {% if cluster_info.higher_good %}
+                <p>This means your {{cluster_info.higher_attr}} is better than {{cluster_info.top_user}}'s. Congratulations!</p>
+            {%else%}
+                <p>This means you should work on reducing your {{cluster_info.higher_attr}}. To do so, we'd recommend {{cluster_info.higher_text | safe}}.</p>
+            {%endif%}
+            <br>
+            <p>Your {{cluster_info.lower_attr}} is lower than {{cluster_info.top_user}}'s.</p>
+            {% if cluster_info.lower_good%}
+            <p>This means your {{cluster_info.lower_attr}} is better than {{cluster_info.top_user}}'s. Congratulations!</p>
+            {%else%}
+                <p>This likely means you should work on increasing your {{cluster_info.lower_attr}}. To do  so, we'd recommend {{cluster_info.lower_text | safe}}.</p>
+            {%endif%}
+        -->
+        <!-- TODO add altair charts for clusters -->
+        <!-- TODO add improvenator-->
     </body>
 </html>
