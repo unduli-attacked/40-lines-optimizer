@@ -1,11 +1,7 @@
-<!DOCTYPE html>
-<html>
-    <head>
-        <title>40 Lines Optimizer</title>
-    </head>
-    <body>
-        <h2>User not found</h2>
-        <p>We weren't able to find any data for {{username}}. Please double check that {{username}} exists on Tetr.io.</p>
-        <a href='/'>Return to homepage</a>
-    </body>
-</html>
+{% extends 'base.html' %}
+{%block title%}Error{%endblock%}
+{%block body%}
+    <h2>User not found</h2>
+    <p>We weren't able to find any data for {{username}}. Please double check that {{username}} exists on Tetr.io.</p>
+    <a href='/'>Return to homepage</a>
+{% endblock %}

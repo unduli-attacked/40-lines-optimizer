@@ -1,27 +1,25 @@
-<!DOCTYPE html>
-<html>
-    <head>
-        <title>40 Lines Optimizer</title>
-        <script>
-            function loading(){
-                document.getElementById('content').style.display = 'none';
-                document.getElementById('loading').style.display = 'block';
-            }
-        </script>
-    </head>
-    <body>
-        <div id="loading" style='display:none; text-align:center;'>
-            <h2>Loading...</h2>
-            <img id='loading-gif' src='../static/loading.gif' alt="A stacker-themed loading animation" />
-        </div>
-        <div id="content" style='text-align:center;'>
-            <h1>40-Lines Optimizer</h1>
-            <form action="/search" method="post">
-                <p>Enter your Tetr.io username to view your personalized optimization recommendations.</p>
-                <br />
-                <input type="text" placeholder="Username" name="username">
-                <input type="submit" onclick="loading();">
-            </form>
-        </div>
-    </body>
-</html>
+{% extends 'base.html' %}
+{%block title%}Home{%endblock%}
+{% block head %}
+    <script>
+        function loading(){
+            document.getElementById('content').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+        }
+    </script>
+{% endblock %}
+{% block body %}
+    <div id="loading" style='display:none; text-align:center;'>
+        <h2>Loading...</h2>
+        <img id='loading-gif' src='../static/loading.gif' alt="A stacker-themed loading animation" />
+    </div>
+    <div id="content" style='text-align:center;'>
+        <h1>40-Lines Optimizer</h1>
+        <form action="/search" method="post">
+            <p>Enter your Tetr.io username to view your personalized optimization recommendations.</p>
+            <br />
+            <input type="text" placeholder="Username" name="username">
+            <input type="submit" onclick="loading();">
+        </form>
+    </div>
+{% endblock %}
