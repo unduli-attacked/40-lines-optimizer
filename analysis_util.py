@@ -123,10 +123,10 @@ class Downloader:
                 "inputs": results.get("stats", {}).get("inputs", math.nan), 
                 "score": results.get("stats", {}).get("score", math.nan), 
                 "pieces_placed": results.get("stats", {}).get("piecesplaced", math.nan), 
-                "singles": sum([results['stats']['clears']['singles'], results['stats']['clears']['minitspinsingles'], results['stats']['clears']['tspinsingles']]) if ('stats' in results) and ('clears' in results['stats']) else math.nan,
-                "doubles": sum([results['stats']['clears']['doubles'], results['stats']['clears']['minitspindoubles'], results['stats']['clears']['tspindoubles']]) if ('stats' in results) and ('clears' in results['stats']) else math.nan, 
-                "triples": sum([results['stats']['clears']['triples'], results['stats']['clears']['minitspintriples'], results['stats']['clears']['tspintriples']]) if ('stats' in results) and ('clears' in results['stats']) else math.nan, 
-                "quads": sum([results['stats']['clears']['quads'], results['stats']['clears']['minitspinquads'], results['stats']['clears']['tspinquads']]) if ('stats' in results) and ('clears' in results['stats']) else math.nan, 
+                "singles": sum([results['stats']['clears'].get('singles', 0), results['stats']['clears'].get('minitspinsingles', 0), results['stats']['clears'].get('tspinsingles', 0)]) if ('stats' in results) and ('clears' in results['stats']) else math.nan,
+                "doubles": sum([results['stats']['clears'].get('doubles', 0), results['stats']['clears'].get('minitspindoubles', 0), results['stats']['clears'].get('tspindoubles', 0)]) if ('stats' in results) and ('clears' in results['stats']) else math.nan, 
+                "triples": sum([results['stats']['clears'].get('triples', 0), results['stats']['clears'].get('minitspintriples', 0), results['stats']['clears'].get('tspintriples', 0)]) if ('stats' in results) and ('clears' in results['stats']) else math.nan, 
+                "quads": sum([results['stats']['clears'].get('quads', 0), results['stats']['clears'].get('minitspinquads', 0), results['stats']['clears'].get('tspinquads')]) if ('stats' in results) and ('clears' in results['stats']) else math.nan, 
                 "all_clears": results.get("stats", {}).get("clears", {}).get("allclear", math.nan), 
                 "finesse_faults": results.get("stats", {}).get("finesse", {}).get("faults", math.nan), 
                 "finesse_perf": results.get("stats", {}).get("finesse", {}).get("perfectpieces", math.nan)
@@ -182,7 +182,7 @@ class Downloader:
             if sec in before['sec'].values:
                 # need ter
                 before = before.loc[before['ter'] >= ter]
-        rank = before['rank'].max() + 0.5
+        rank = int(before['rank'].max())
         del before
         return rank
 
@@ -236,21 +236,15 @@ class Analyzer:
         self.stds_df = pd.read_csv('data/cluster_stds.csv', index_col=[0])
         self.advice = json.load(open('data/advice_text.json', 'r'))
         self.model = load('data/cluster_model.joblib')
-        self.scaler = StandardScaler()
+        self.scaler = load('data/scaler.joblib')
         self.debug = debug
-    
-    def cluster_scale(self, x):
-        u = 2706116.195379935 # original sample set mean
-        s = 15783157.09064165 # original sample set standard deviation
-
-        return (x-u)/s
-    
     
     def get_cluster(self, user_info):
         feature_arr = []
         for key in self.feature_set:
-            feature_arr.append(self.cluster_scale(user_info[key]))
-        return self.model.predict([feature_arr])[0]
+            feature_arr.append((user_info[key]))
+        feature_arr = self.scaler.transform([feature_arr])
+        return self.model.predict(feature_arr)[0]
     
     
     
@@ -311,9 +305,9 @@ class Analyzer:
 test = False
 if test==True:
     dl = Downloader('data/leaderboard_2024.csv')
+    an = Analyzer(debug=True)
     # user = dl.pull_user('badwolf5940')
-    demog_data = dl.pull_demog_data('badwolf5940')
-    summ_data = dl.pull_summ_data('badwolf5940')
-    user_data = demog_data | summ_data
-    user_data['rank'] = dl.place_rank(user_data['pri'], user_data['sec'], user_data['ter'])
+    user_data = dl.pull_user('westl')
+    cluster = an.get_cluster(user_data)
     print(user_data)
+    print(cluster)
